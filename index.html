@@ -21,8 +21,26 @@ const $=id=>document.getElementById(id);const e=s=>String(s??'').replace(/[&<>"'
 function table(headers,rows){return '<div class="scroll"><table><thead><tr>'+headers.map(x=>'<th>'+e(x)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(x=>'<td>'+e(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
 function current(){return data.events[eventIndex].tasks[taskIndex]}
 function navigation(){
- $('events').innerHTML=(data.standings?'<button class="event '+(eventIndex===-1?'active':'')+'" data-event="-1">総合成績</button>':'')+data.events.map((v,i)=>'<button class="event '+(i===eventIndex?'active':'')+'" data-event="'+i+'">'+e(v.name)+'</button>').join('');
+ $('events').innerHTML=(data.standings?'<button class="event '+(eventIndex===-1?'active':'')+'" data-event="-1">総合成績</button><button class="event '+(eventIndex===-2?'active':'')+'" data-event="-2">Excelとの差分詳細</button><button class="event '+(eventIndex===-3?'active':'')+'" data-event="-3">登録者一覧</button>':'')+data.events.map((v,i)=>'<button class="event '+(i===eventIndex?'active':'')+'" data-event="'+i+'">'+e(v.name)+'</button>').join('');
  document.querySelectorAll('[data-event]').forEach(b=>b.onclick=()=>{eventIndex=+b.dataset.event;taskIndex=0;render()});
+}
+function renderOverview(){
+ navigation();$('task').closest('.controls').hidden=true;$('steps').hidden=true;document.querySelector('.tabs').hidden=true;
+ $('updated').textContent='2026年 佐賀ＩＢＦまで ／ 検証用スナップショット';
+ const tasks=data.events.flatMap((event,ei)=>event.tasks.map((task,ti)=>({event,ei,task,ti}))).filter(x=>x.task.verification?.status==='different');
+ if(eventIndex===-3){
+  const rows=[...data.standings.rows].sort((a,b)=>a.registration_id.localeCompare(b.registration_id));
+  $('eventTitle').textContent='登録者一覧';$('cards').innerHTML='<div class="card"><span class="muted">登録者</span><span class="num">'+rows.length+'名</span></div>';
+  $('status').innerHTML='<div class="notice">佐賀大会までの登録者を表示しています。氏名とNRS登録番号のみ公開しています。</div>';
+  $('content').innerHTML='<div class="controls"><input id="registrySearch" aria-label="登録者を検索" placeholder="氏名・登録番号で検索"></div><div id="registryRows"></div>';
+  const show=()=>{const q=$('registrySearch').value.toLowerCase();const found=rows.filter(r=>(r.registration_id+' '+r.name).toLowerCase().includes(q));$('registryRows').innerHTML=found.length?table(['NRS登録番号','氏名'],found.map(r=>[r.registration_id,r.name])):'<div class="empty">該当する登録者はいません</div>';};$('registrySearch').oninput=show;show();
+ }else{
+  $('eventTitle').textContent='Excelと差があるタスク';$('cards').innerHTML='<div class="card"><span class="muted">差があるタスク</span><span class="num">'+tasks.length+'</span></div>';
+  $('status').innerHTML='<div class="notice">競技結果と登録者リストからの独立計算を、Excelの計算結果と比較しています。差があることだけでは、どちらが正しいかは決まりません。Pointsは減点前、Scoreは減点後です。</div>';
+  $('content').innerHTML=tasks.length?tasks.map(({event,ei,task,ti})=>{const v=task.verification;const differences=v.differences||[];const identify=id=>[id,task.display_names?.[String(id)]||'—',task.identity_map?.[String(id)]||'—'];return '<section><h3>'+e(event.name+' '+task.reference_sheet)+'</h3><button class="linkbutton" data-jump="'+ei+','+ti+'">このタスクの得点一覧を見る</button><p class="muted">得点差 '+differences.length+'名 ／ 独立計算のみ '+(v.extra_pilots||[]).length+'名 ／ Excelのみ '+(v.missing_reference_pilots||[]).length+'名</p>'+ (differences.length?table(['選手番号','氏名','NRS登録番号','独立Points','Excel Points','独立Score','Excel Score'],differences.map(r=>[...identify(r.pilot_id),r.system_points,r.excel_points,r.system_score,r.excel_score])):'')+((v.extra_pilots||[]).length?'<p>独立計算のみの選手番号：'+e(v.extra_pilots.join('、'))+'</p>':'')+((v.missing_reference_pilots||[]).length?'<p>Excelのみの選手番号：'+e(v.missing_reference_pilots.join('、'))+'</p>':'')+'</section>';}).join(''):'<div class="empty">差があるタスクはありません</div>';
+  document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{[eventIndex,taskIndex]=b.dataset.jump.split(',').map(Number);tab='scores';render()});
+ }
+ $('footer').textContent='Excelは検算のために使用しています。独立計算の値をExcelで置き換えていません。';
 }
 function renderStandings(){const s=data.standings;navigation();
  $('cards').innerHTML=[['登録選手',s.rows.length],['得点のある選手',s.rows.filter(r=>r.count>0).length],['集計時点',s.as_of],['計算方法','独立計算']].map(([a,b])=>'<div class="card"><span class="muted">'+e(a)+'</span><span class="num">'+e(b)+'</span></div>').join('');
@@ -33,7 +51,7 @@ function renderStandings(){const s=data.standings;navigation();
  const show=()=>{const q=$('rankingSearch').value.toLowerCase();const rows=s.rows.filter(r=>(r.name+' '+r.registration_id).toLowerCase().includes(q));$('rankingRows').innerHTML=rows.length?table(['暫定順位','氏名','NRS登録番号','得点（加点前）','採用数','平均','上位7合計','加点','Top1','Top2','Top3','Top4','Top5','Top6','Top7'],rows.map(r=>[r.rank,r.name,r.registration_id,Number(r.total).toFixed(2),r.count,Number(r.average).toFixed(2),r.top7.reduce((a,v)=>a+Number(v||0),0),r.bonus===null?'未確認':r.bonus,...r.top7])):'<div class="empty">該当する選手はいません</div>';};$('rankingSearch').oninput=show;show();
  $('footer').textContent='競技結果と登録情報から本システムで再計算しました。Excelは計算後の差分検査専用です。平均の丸め・7タスク未満・特別加点は確認中のため暫定順位です。';
 }
-function render(){if(eventIndex===-1){renderStandings();return;}const event=data.events[eventIndex],t=current(),source=t.view_kind==='source';navigation();
+function render(){if(eventIndex===-1){renderStandings();return;}if(eventIndex===-2||eventIndex===-3){renderOverview();return;}const event=data.events[eventIndex],t=current(),source=t.view_kind==='source';navigation();
  $('task').closest('.controls').hidden=false;$('steps').hidden=false;document.querySelector('.tabs').hidden=false;
  const computed=data.events.flatMap(x=>x.tasks).filter(x=>x.view_kind==='calculated'),unique=[...new Map(computed.map(x=>[x.reference_sheet,x])).values()];
  $('cards').innerHTML=[['大会',data.events.length],['独立計算タスク',unique.length],['計算対象の延べ人数',unique.reduce((a,x)=>a+x.matched_count,0)],['Excelと差のあるタスク',unique.filter(x=>x.verification?.status==='different').length]].map(([a,b])=>'<div class="card"><span class="muted">'+a+'</span><span class="num">'+b+'</span></div>').join('');
